@@ -23,9 +23,13 @@ class BatchEnv:
         self.n, self.Hm, self.Wm = n, hmax, wmax
         self.shaping, self.new_cell = shaping, new_cell
         self.true = np.zeros((n, hmax, wmax), np.uint8)
-        self.known = np.zeros((n, hmax, wmax), bool)
-        self.mem = np.zeros((n, hmax, wmax), np.uint8)
-        self.visits = np.zeros((n, hmax, wmax), np.int32)
+        # память с полями шириной K: окно сети берётся без пересборки поля на каждом шаге;
+        # known, mem, visits - виды на середину (без полей)
+        k = F.K
+        self.padded = (np.zeros((n, hmax + 2 * k, wmax + 2 * k), bool),
+                       np.zeros((n, hmax + 2 * k, wmax + 2 * k), np.uint8),
+                       np.zeros((n, hmax + 2 * k, wmax + 2 * k), np.int32))
+        self.known, self.mem, self.visits = (a[:, k:k + hmax, k:k + wmax] for a in self.padded)
         self.pos = np.zeros((n, 2), np.int64)
         self.exit = np.zeros((n, 2), np.int64)
         self.hw = np.zeros((n, 2), np.int64)
@@ -69,9 +73,9 @@ class BatchEnv:
                 self.mem[b, rr, cc] = self.true[b, rr, cc]
 
     def encode(self, idx=None):
-        idx = np.arange(self.n) if idx is None else idx
-        return F.encode(self.known[idx], self.mem[idx], self.visits[idx], self.pos[idx],
-                        self.exit[idx], self.hw[idx], self.last[idx])
+        idx = np.arange(self.n) if idx is None else np.asarray(idx)
+        return F.encode(None, None, None, self.pos[idx], self.exit[idx], self.hw[idx], self.last[idx],
+                        padded=self.padded, rows=idx)
 
     def distance_to_exit(self, idx=None):
         idx = np.arange(self.n) if idx is None else idx

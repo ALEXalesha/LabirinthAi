@@ -14,14 +14,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # (имя, файл, было, стало, проверки)
-MUTANTS = [
-    ("cards: бьёт равной", "game/core/cards.py",
-     "return defense % 9 > attack % 9", "return defense % 9 >= attack % 9", "tests/test_cards.py"),
-    ("cards: козырь не бьёт", "game/core/cards.py",
-     "return sd == trump", "return False", "tests/test_cards.py"),
-    ("cards: раздача по 5", "game/core/cards.py",
-     "for _ in range(HAND):", "for _ in range(HAND - 1):", "tests/test_cards.py"),
-]
+MUTANTS = []          # все мутанты - в tools/mutants.py
 
 
 def load_more():

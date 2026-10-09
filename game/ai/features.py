@@ -25,7 +25,8 @@ _FLIP_H = np.array([0, 3, 2, 1])
 
 
 def planes(known, cells, visits, hw, exit_):
-    """Плоскости каналов (B, H, W, C) по памяти пачки."""
+    """Плоскости каналов (B, H, W, C) по всему полю - медленный образец: тест сверяет с ним
+    быстрое encode."""
     B, H, W = known.shape
     out = np.zeros((B, H, W, C), np.float32)
     rows = np.arange(H)[None, :, None]
@@ -42,29 +43,49 @@ def planes(known, cells, visits, hw, exit_):
     return out
 
 
-def encode(known, cells, visits, pos, exit_, hw, last):
-    """Вход сети (B, SIZE), отражения flips (B, 2) и разрешённые ходы в развёрнутом окне
-    (B, 4). Разрешены ходы туда, где у своей клетки виден проход."""
-    B, H, W = known.shape
-    P = planes(known, cells, visits, hw, exit_)
-    pad = np.zeros((B, H + 2 * K, W + 2 * K, C), np.float32)
-    pad[:, K:K + H, K:K + W] = P
-    off = np.arange(SIDE)
-    rr = pos[:, 0, None] + off[None, :]               # в координатах с полями
-    cc = pos[:, 1, None] + off[None, :]
-    crop = pad[np.arange(B)[:, None, None], rr[:, :, None], cc[:, None, :]]   # (B, S, S, C)
+def pad(a):
+    """Поля шириной K вокруг поля (B, H, W): окно у края не выходит за массив."""
+    return np.pad(a, ((0, 0), (K, K), (K, K)))
 
+
+def encode(known, cells, visits, pos, exit_, hw, last, padded=None, rows=None):
+    """Вход сети (B, SIZE), отражения flips (B, 2) и разрешённые ходы в развёрнутом окне
+    (B, 4). Разрешены ходы туда, где у своей клетки виден проход.
+
+    Окно берётся прямо из памяти, уже развёрнутым: при отражении номера строк (столбцов)
+    окна идут в обратном порядке, а биты проходов N<->S (E<->W) меняются местами. Всё
+    поле целиком не перебирается - только (2K+1)^2 клеток на лабиринт. padded - те же
+    known, cells, visits с полями K (BatchEnv держит их готовыми), rows - какие строки
+    пачки padded брать (по умолчанию все по порядку)."""
+    B = len(pos)
+    kp, mp, vp = padded if padded is not None else (pad(known), pad(cells), pad(visits))
     dy = exit_[:, 0] - pos[:, 0]
     dx = exit_[:, 1] - pos[:, 1]
     flip_v = dy < 0
     flip_h = dx < 0
-    if flip_v.any():
-        v = crop[flip_v][:, ::-1]
-        crop[flip_v] = v[..., [0, 1, 4, 3, 2, 5, 6, 7, 8]]
-    if flip_h.any():
-        h = crop[flip_h][:, :, ::-1]
-        crop[flip_h] = h[..., [0, 1, 2, 5, 4, 3, 6, 7, 8]]
     flips = np.stack([flip_v, flip_h], axis=1)
+    off = np.arange(SIDE)
+    rr = pos[:, 0, None] + np.where(flip_v[:, None], SIDE - 1 - off, off)    # строки с полями
+    cc = pos[:, 1, None] + np.where(flip_h[:, None], SIDE - 1 - off, off)
+    b = (np.arange(B) if rows is None else np.asarray(rows))[:, None, None]
+    R, Cc = rr[:, :, None], cc[:, None, :]
+    kw = kp[b, R, Cc]
+    mw = np.where(kw, mp[b, R, Cc], 0)
+    vw = vp[b, R, Cc]
+    real_r, real_c = R - K, Cc - K
+    crop = np.empty((B, SIDE, SIDE, C), np.float32)
+    crop[..., 0] = ((real_r >= 0) & (real_r < hw[:, 0, None, None]) &
+                    (real_c >= 0) & (real_c < hw[:, 1, None, None]))
+    crop[..., 1] = kw
+    fv, fh = flip_v[:, None, None], flip_h[:, None, None]
+    n, e, s_, w = (mw & 1) > 0, (mw & 2) > 0, (mw & 4) > 0, (mw & 8) > 0
+    crop[..., 2] = np.where(fv, s_, n)
+    crop[..., 3] = np.where(fh, w, e)
+    crop[..., 4] = np.where(fv, n, s_)
+    crop[..., 5] = np.where(fh, e, w)
+    crop[..., 6] = vw > 0
+    crop[..., 7] = np.minimum(vw, 4) / 4.0
+    crop[..., 8] = (real_r == exit_[:, 0, None, None]) & (real_c == exit_[:, 1, None, None])
 
     g = np.zeros((B, GLOBAL), np.float32)
     g[:, 0] = np.minimum(np.abs(dy) / 16.0, 3.0)
@@ -75,12 +96,7 @@ def encode(known, cells, visits, pos, exit_, hw, last):
     if has_last.any():
         lc = from_real(np.where(has_last, last, 0), flips)
         g[np.arange(B)[has_last], 4 + lc[has_last]] = 1.0
-
-    here = cells[np.arange(B), pos[:, 0], pos[:, 1]]
-    legal_real = np.stack([(here & b) > 0 for b in (1, 2, 4, 8)], axis=1)
-    legal = np.zeros_like(legal_real)
-    for d in range(4):
-        legal[np.arange(B), from_real(np.full(B, d), flips)] = legal_real[:, d]
+    legal = crop[:, K, K, 2:6] > 0          # своя клетка всегда видна: её проходы в окне
     x = np.concatenate([crop.reshape(B, -1), g], axis=1)
     return x, flips, legal
 
