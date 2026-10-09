@@ -214,9 +214,7 @@ class NetAgent:
         p, v = self.think(mem)
         self.last_probs, self.last_value = p, v
         if self.greedy:
-            # при равных - тот, где реже бывал (на случай одинаковых логитов)
-            best = max(mem.moves(), key=lambda d: (round(p[d], 6), -mem.visits[mem.pos[0] + DR[d], mem.pos[1] + DC[d]]))
-            return best
+            return int(np.argmax(p))
         return int(self.rng.choice(4, p=p / p.sum()))
 
 
