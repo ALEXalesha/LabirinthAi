@@ -1,0 +1,42 @@
+# Проверки на каждый пуш. Копия .gitea/workflows/ci.yml для GitHub: раннер windows-latest
+# и setup-python. Меняя проверки, править оба файла.
+#
+# Раннер windows: окно проверяется без экрана (Qt offscreen), а тексту на кадрах нужны
+# шрифты Windows.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: Проверки
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Зависимости
+        run: pip install -r requirements-dev.txt
+
+      - name: Тесты
+        run: python -m pytest -q
+
+      - name: Самопроверка без экрана
+        run: |
+          python main.py --selftest selftest.txt
+          Get-Content selftest.txt

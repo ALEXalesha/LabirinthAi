@@ -1,0 +1,43 @@
+# Проверки на домашнем Gitea. Копия .github/workflows/ci.yml, отличие одно: задачи идут
+# на раннер ПК (метка windows), а не на windows-latest. Раз папка .gitea/workflows есть,
+# Gitea берёт проверки только отсюда. Меняя проверки, править оба файла.
+#
+# Потоки BLAS - по одному: сеть маленькая, а ПК делят несколько задач.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: Проверки
+    runs-on: windows
+    timeout-minutes: 45
+    env:
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Python ПК (3.13) в своём окружении, а не setup-python: тот ставит Python
+      # установщиком, которому нужны права администратора на реестр, - у раннера их нет.
+      - name: Python в отдельном окружении
+        run: |
+          py -3.13 -m venv .ci-venv
+          [IO.File]::AppendAllText($env:GITHUB_PATH, "$((Resolve-Path .ci-venv).Path)\Scripts`n")
+
+      - name: Зависимости
+        run: pip install -r requirements-dev.txt
+
+      - name: Тесты
+        run: python -m pytest -q
+
+      - name: Самопроверка без экрана
+        run: |
+          python main.py --selftest selftest.txt
+          Get-Content selftest.txt
