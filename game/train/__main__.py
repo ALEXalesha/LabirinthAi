@@ -73,10 +73,11 @@ def main(argv=None):
         early = os.path.join(args.run, "early.npz")
         if os.path.exists(early):
             shutil.copyfile(early, os.path.join(MODEL_DIR, EARLY))
-        with open(os.path.join(MODEL_DIR, "training.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(MODEL_DIR, "training.json"), "w", encoding="utf-8", newline="\n") as f:
             json.dump({"cfg": t.cfg, "updates": t.update, "transitions": t.transitions,
                        "episodes": t.episodes, "seconds": round(t.seconds, 1), "threads": args.threads,
-                       "early_at": _early_at(args), "curve": t.curve}, f, ensure_ascii=False, indent=1)
+                       "early_at": _early_at(args), "curve_key": "ratio_sampled",
+                       "baselines": baselines(t.valid), "curve": t.curve}, f, ensure_ascii=False, indent=1)
         print(f"сеть круга {t.update} -> game/models")
         return 0
 
@@ -123,6 +124,21 @@ def main(argv=None):
     t.save_snapshot()
     t.log(f"готово: {t.update} кругов, {t.transitions} шагов, {t.episodes} лабиринтов, {t.seconds / 60:.1f} мин")
     return 0
+
+
+def baselines(mazes):
+    """Шаги / кратчайший у классических решателей на тех же лабиринтах, что кривая сети."""
+    from game.ai.agents import make_agent
+    from game.core.fog import play
+    from game.train.ppo import score
+    out = {}
+    for name in ("right_hand", "tremaux", "optimist"):
+        res = []
+        for i, m in enumerate(mazes):
+            run = play(make_agent(name, seed=i), m)
+            res.append((run.memory.steps, run.done))
+        out[name] = round(score(res, mazes)[0], 3)
+    return out
 
 
 def _early_at(args):

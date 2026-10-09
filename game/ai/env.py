@@ -23,9 +23,9 @@ class BatchEnv:
         self.n, self.Hm, self.Wm = n, hmax, wmax
         self.shaping, self.new_cell = shaping, new_cell
         self.true = np.zeros((n, hmax, wmax), np.uint8)
-        # память с полями шириной K: окно сети берётся без пересборки поля на каждом шаге;
-        # known, mem, visits - виды на середину (без полей)
-        k = F.K
+        # память с полями шириной PAD: окно и обзор сети берутся без пересборки поля на
+        # каждом шаге; known, mem, visits - виды на середину (без полей)
+        k = F.PAD
         self.padded = (np.zeros((n, hmax + 2 * k, wmax + 2 * k), bool),
                        np.zeros((n, hmax + 2 * k, wmax + 2 * k), np.uint8),
                        np.zeros((n, hmax + 2 * k, wmax + 2 * k), np.int32))

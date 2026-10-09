@@ -10,14 +10,26 @@ from_canon переводят их обратно.
 
 Каналы каждой клетки окна (C = 9): внутри поля; видел; проходы N, E, S, W (у виденных
 клеток); был здесь; сколько раз был (до 4, деленное на 4); выход.
+
+Обзор (с версии 2): вокруг игрока 7 x 7 блоков по 3 x 3 клетки (до 10 клеток в каждую
+сторону), в каждом блоке - доля клеток поля, доля виденных, доля пройденных и есть ли там
+выход. Окно 9 x 9 видит проходы рядом, обзор - где ещё не был и куда тянется лабиринт:
+без него сеть в больших лабиринтах кружила по уже пройденному.
 """
 import numpy as np
 
 K = 4                       # окно (2K+1) x (2K+1) клеток вокруг игрока
 SIDE = 2 * K + 1
 C = 9
+BLOCK = 3                   # обзор: блоки BLOCK x BLOCK клеток
+GRID = 7                    # GRID x GRID блоков вокруг игрока
+CC = 4                      # каналы блока
+REACH = BLOCK * GRID // 2   # 10 клеток в каждую сторону
+PAD = max(K, REACH)         # поля массивов памяти
 GLOBAL = 8
-SIZE = SIDE * SIDE * C + GLOBAL
+WINDOW = SIDE * SIDE * C
+COARSE = GRID * GRID * CC
+SIZE = WINDOW + COARSE + GLOBAL
 
 # перестановка направлений N E S W при отражениях: по вертикали N<->S, по горизонтали E<->W
 _FLIP_V = np.array([2, 1, 0, 3])
@@ -44,8 +56,8 @@ def planes(known, cells, visits, hw, exit_):
 
 
 def pad(a):
-    """Поля шириной K вокруг поля (B, H, W): окно у края не выходит за массив."""
-    return np.pad(a, ((0, 0), (K, K), (K, K)))
+    """Поля шириной PAD вокруг поля (B, H, W): окно и обзор у края не выходят за массив."""
+    return np.pad(a, ((0, 0), (PAD, PAD), (PAD, PAD)))
 
 
 def encode(known, cells, visits, pos, exit_, hw, last, padded=None, rows=None):
@@ -54,8 +66,8 @@ def encode(known, cells, visits, pos, exit_, hw, last, padded=None, rows=None):
 
     Окно берётся прямо из памяти, уже развёрнутым: при отражении номера строк (столбцов)
     окна идут в обратном порядке, а биты проходов N<->S (E<->W) меняются местами. Всё
-    поле целиком не перебирается - только (2K+1)^2 клеток на лабиринт. padded - те же
-    known, cells, visits с полями K (BatchEnv держит их готовыми), rows - какие строки
+    поле целиком не перебирается - только окно и обзор вокруг. padded - те же known, cells,
+    visits с полями PAD (BatchEnv держит их готовыми), rows - какие строки
     пачки padded брать (по умолчанию все по порядку)."""
     B = len(pos)
     kp, mp, vp = padded if padded is not None else (pad(known), pad(cells), pad(visits))
@@ -64,15 +76,12 @@ def encode(known, cells, visits, pos, exit_, hw, last, padded=None, rows=None):
     flip_v = dy < 0
     flip_h = dx < 0
     flips = np.stack([flip_v, flip_h], axis=1)
-    off = np.arange(SIDE)
-    rr = pos[:, 0, None] + np.where(flip_v[:, None], SIDE - 1 - off, off)    # строки с полями
-    cc = pos[:, 1, None] + np.where(flip_h[:, None], SIDE - 1 - off, off)
     b = (np.arange(B) if rows is None else np.asarray(rows))[:, None, None]
-    R, Cc = rr[:, :, None], cc[:, None, :]
+    R, Cc = _grid(pos, flip_v, flip_h, K)
+    real_r, real_c = R - PAD, Cc - PAD
     kw = kp[b, R, Cc]
     mw = np.where(kw, mp[b, R, Cc], 0)
     vw = vp[b, R, Cc]
-    real_r, real_c = R - K, Cc - K
     crop = np.empty((B, SIDE, SIDE, C), np.float32)
     crop[..., 0] = ((real_r >= 0) & (real_r < hw[:, 0, None, None]) &
                     (real_c >= 0) & (real_c < hw[:, 1, None, None]))
@@ -97,8 +106,40 @@ def encode(known, cells, visits, pos, exit_, hw, last, padded=None, rows=None):
         lc = from_real(np.where(has_last, last, 0), flips)
         g[np.arange(B)[has_last], 4 + lc[has_last]] = 1.0
     legal = crop[:, K, K, 2:6] > 0          # своя клетка всегда видна: её проходы в окне
-    x = np.concatenate([crop.reshape(B, -1), g], axis=1)
+    coarse = _coarse(kp, vp, b, pos, exit_, hw, flip_v, flip_h)
+    x = np.concatenate([crop.reshape(B, -1), coarse.reshape(B, -1), g], axis=1)
     return x, flips, legal
+
+
+def _grid(pos, flip_v, flip_h, reach):
+    """Индексы (с полями PAD) квадрата клеток +-reach вокруг игрока, уже развёрнутого:
+    при отражении строки (столбцы) идут в обратном порядке."""
+    side = 2 * reach + 1
+    off = np.arange(side) + PAD - reach
+    rev = side - 1 - np.arange(side) + PAD - reach
+    rr = pos[:, 0, None] + np.where(flip_v[:, None], rev, off)
+    cc = pos[:, 1, None] + np.where(flip_h[:, None], rev, off)
+    return rr[:, :, None], cc[:, None, :]
+
+
+def _coarse(kp, vp, b, pos, exit_, hw, flip_v, flip_h):
+    """Обзор (B, GRID, GRID, CC): доля поля, виденного, пройденного в каждом блоке; выход."""
+    B = len(pos)
+    R, Cc = _grid(pos, flip_v, flip_h, REACH)
+    real_r, real_c = R - PAD, Cc - PAD
+    inside = ((real_r >= 0) & (real_r < hw[:, 0, None, None]) &
+              (real_c >= 0) & (real_c < hw[:, 1, None, None]))
+    ex = (real_r == exit_[:, 0, None, None]) & (real_c == exit_[:, 1, None, None])
+    side = GRID * BLOCK
+    stack = np.empty((B, side, side, CC), np.float32)
+    stack[..., 0] = inside
+    stack[..., 1] = kp[b, R, Cc]
+    stack[..., 2] = vp[b, R, Cc] > 0
+    stack[..., 3] = ex
+    blocks = stack.reshape(B, GRID, BLOCK, GRID, BLOCK, CC)
+    out = blocks.mean(axis=(2, 4))
+    out[..., 3] = blocks[..., 3].max(axis=(2, 4))
+    return out
 
 
 def from_real(d, flips):

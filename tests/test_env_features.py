@@ -54,7 +54,7 @@ def test_window_rotates_exit_to_bottom_right():
             mem = Run(t).memory
             x, flips, legal = F.encode_memory(mem)
             crop = x[0, :F.SIDE * F.SIDE * F.C].reshape(F.SIDE, F.SIDE, F.C)
-            assert x[0, F.SIDE * F.SIDE * F.C + 0] > 0 and x[0, F.SIDE * F.SIDE * F.C + 1] > 0
+            assert x[0, F.WINDOW + F.COARSE + 0] > 0 and x[0, F.WINDOW + F.COARSE + 1] > 0
             # из угла вход: поле внутри только снизу справа от центра окна
             assert crop[F.K, F.K, 0] == 1
             assert crop[F.K - 1, F.K, 0] == 0 and crop[F.K, F.K - 1, 0] == 0
@@ -116,11 +116,37 @@ def test_fast_encode_equals_reference(seed):
     want = reference_encode(env.known.copy(), env.mem.copy(), env.visits.copy(), env.pos, env.exit,
                             env.hw, env.last)
     got = env.encode(idx)
-    for a, b in zip(got, want):
-        assert np.array_equal(a, b)
+    W, G = F.WINDOW, F.GLOBAL
+    assert np.array_equal(got[0][:, :W], want[0][:, :W])
+    assert np.array_equal(got[0][:, -G:], want[0][:, -G:])
+    assert np.array_equal(got[1], want[1]) and np.array_equal(got[2], want[2])
+    coarse = got[0][:, W:W + F.COARSE].reshape(6, F.GRID, F.GRID, F.CC)
+    for i in range(6):
+        ref = reference_coarse(env.known[i], env.visits[i], env.pos[i], env.exit[i], env.hw[i], got[1][i])
+        np.testing.assert_allclose(coarse[i], ref, atol=1e-6)
     part = np.array([4, 1])
     got_part = env.encode(part)
-    assert np.array_equal(got_part[0], want[0][part])
+    assert np.array_equal(got_part[0], got[0][part])
+
+
+def reference_coarse(known, visits, pos, exit_, hw, flips):
+    """Обзор по определению: блок (i, j) развёрнутого обзора - клетки на 3*(i-3) строк ниже
+    игрока (выше, если отражено) и т.д.; доли считаются циклом."""
+    out = np.zeros((F.GRID, F.GRID, F.CC))
+    half = F.GRID // 2
+    for i in range(F.GRID):
+        for j in range(F.GRID):
+            sr = -1 if flips[0] else 1
+            sc = -1 if flips[1] else 1
+            cr = pos[0] + sr * F.BLOCK * (i - half)
+            cc = pos[1] + sc * F.BLOCK * (j - half)
+            cells = [(r, c) for r in range(cr - 1, cr + 2) for c in range(cc - 1, cc + 2)]
+            ins = [(r, c) for r, c in cells if 0 <= r < hw[0] and 0 <= c < hw[1]]
+            out[i, j, 0] = len(ins) / 9
+            out[i, j, 1] = sum(known[r, c] for r, c in ins) / 9
+            out[i, j, 2] = sum(visits[r, c] > 0 for r, c in ins) / 9
+            out[i, j, 3] = float((exit_[0], exit_[1]) in ins)
+    return out
 
 
 def reference_encode(known, cells, visits, pos, exit_, hw, last):
