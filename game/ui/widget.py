@@ -586,15 +586,17 @@ class GameWidget(QWidget):
                       "training": self.training, "settings": self.settings_page}
         for p in self.pages.values():
             self.stack.addWidget(p)
+        # клавиши - на всё окно: у кнопок и списков нет фокуса, и без этого стрелки ловились
+        # бы только когда фокус внутри игры; на скрытой игре (другая в оболочке) не срабатывают
         for d, keys in KEYS.items():
             for k in keys:
                 sc = QShortcut(QKeySequence(k), self)
-                sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+                sc.setContext(Qt.ShortcutContext.WindowShortcut)
                 sc.activated.connect(lambda d=d: self.on_key(d))
         for keys, slot in (("Escape", lambda: self.show_page("menu")), ("N", self.on_new_key),
                            ("Т", self.on_new_key)):
             sc = QShortcut(QKeySequence(keys), self)
-            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc.setContext(Qt.ShortcutContext.WindowShortcut)
             sc.activated.connect(slot)
         ctx.changed.connect(self.on_ctx_changed)
         self.apply_theme()

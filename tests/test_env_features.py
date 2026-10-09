@@ -82,7 +82,7 @@ def test_single_net_agent_matches_batch_runner():
     mazes = [generate(k, 8, 9, s) for s, k in enumerate(["dfs", "prim", "kruskal", "wilson"] * 3)]
     batch = run_policy(net_chooser(net, greedy=True), mazes, cap_mult=3)
     for m, (steps, ok) in zip(mazes, batch):
-        run = play(NetAgent(net), m, limit=3 * m.h * m.w)
+        run = play(NetAgent(net, greedy=True), m, limit=3 * m.h * m.w)
         assert (run.memory.steps, run.done) == (steps, ok)
 
 

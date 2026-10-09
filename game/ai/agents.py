@@ -18,6 +18,7 @@ import numpy as np
 from game.ai import features as F
 from game.core.maze import DC, DR, OPPOSITE
 
+STRONG_TEMPERATURE = 1.0       # подбирается по кривой после обучения
 HONEST = ("right_hand", "tremaux", "optimist", "net_random", "net_early", "net_strong")
 CHEATERS = ("bfs", "astar")
 
@@ -186,15 +187,17 @@ def search(maze, kind="astar"):
 
 
 class NetAgent:
-    """Сеть выбирает ход по памяти. greedy - самый вероятный ход; иначе - случайно по
-    вероятностям с зерном (так играет ранний агент в «Смотреть»)."""
+    """Сеть выбирает ход по памяти: случайно по своим вероятностям с зерном (temperature < 1 -
+    увереннее), greedy - всегда самый вероятный. Жадная сеть зацикливается: в одинаковой
+    памяти один и тот же ход, а счётчик посещений в окне ограничен 4."""
     cheater = False
 
-    def __init__(self, net, name="net_strong", greedy=True, seed=0):
+    def __init__(self, net, name="net_strong", greedy=False, seed=0, temperature=1.0):
         self.net = net
         self.name = name
         self.greedy = greedy
         self.seed = seed
+        self.temperature = temperature
 
     def reset(self, mem):
         self.rng = np.random.default_rng(self.seed)
@@ -215,6 +218,8 @@ class NetAgent:
         self.last_probs, self.last_value = p, v
         if self.greedy:
             return int(np.argmax(p))
+        if self.temperature != 1.0:
+            p = np.where(p > 0, p, 0) ** (1.0 / self.temperature)
         return int(self.rng.choice(4, p=p / p.sum()))
 
 
@@ -236,7 +241,7 @@ def make_agent(name, seed=0):
         return NetAgent(net, name, greedy=False, seed=seed) if net is not None else None
     if name == "net_strong":
         net = load_model(STRONG)
-        return NetAgent(net, name) if net is not None else None
+        return NetAgent(net, name, seed=seed, temperature=STRONG_TEMPERATURE) if net is not None else None
     raise ValueError(f"нет агента {name!r}")
 
 
