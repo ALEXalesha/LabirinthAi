@@ -52,11 +52,13 @@ def main(argv=None):
                     "(по умолчанию - 1/10 всех кругов)")
     ap.add_argument("--threads", default="2")
     ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--init", help="начать с весов сети (например, после подражания: runs/labirinth-imitate/net.npz)")
+    ap.add_argument("--value-warmup", type=int, default=0, help="сколько первых кругов учить только оценку")
     ap.add_argument("--trial", action="store_true", help="3 круга и прогноз времени")
     ap.add_argument("--publish", action="store_true")
     args = ap.parse_args(argv)
 
-    from game.ai.net import EARLY, MODEL_DIR, STRONG
+    from game.ai.net import EARLY, MODEL_DIR, STRONG, PolicyNet
     from game.train.ppo import Trainer
     hidden = tuple(int(x) for x in args.hidden.split(","))
     kw = dict(envs=args.envs, steps=args.steps, hidden=hidden, lr=args.lr, ent=args.ent, epochs=args.epochs,
@@ -106,11 +108,14 @@ def main(argv=None):
     if args.resume and t.load_snapshot():
         t.log(f"продолжаю с круга {t.update}")
     else:
+        if args.init:
+            t.net.copy_from(PolicyNet.load(args.init))
+            t.log(f"веса из {args.init}")
         t.log(f"с нуля: {json.dumps(t.cfg, ensure_ascii=False)}, потоков {args.threads}, сеть {t.net.count()} весов")
         t.log(f"кривая: {t.checkpoint_curve()}")
     early_at = _early_at(args)
     while t.update < args.updates:
-        info = t.iterate()
+        info = t.iterate(value_only=t.update < args.value_warmup)
         if t.update % 5 == 0:
             t.log(f"круг {t.update}: обучение шаги/кратчайший {info['train_ratio']}, дошли {info['train_success']}, "
                   f"энтропия {info['entropy']:.3f}, отсечено {info['clipfrac']:.2f}, "

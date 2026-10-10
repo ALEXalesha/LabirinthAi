@@ -155,7 +155,7 @@ class Trainer:
         return (xs.reshape(T * B, -1), legals.reshape(T * B, 4), acts.reshape(-1), logps.reshape(-1),
                 adv.reshape(-1), ret.reshape(-1))
 
-    def optimize(self, batch):
+    def optimize(self, batch, value_only=False):
         c = self.cfg
         xs, legals, acts, logps, adv, ret = batch
         n = len(acts)
@@ -168,6 +168,8 @@ class Trainer:
                 logits, v = self.net.forward(xs[mb], legals[mb])
                 _, dl, dv, info = ppo_loss(logits, v.astype(np.float64), acts[mb], logps[mb], adv[mb], ret[mb],
                                            c["clip"], c["ent"], c["vf"])
+                if value_only:
+                    dl[...] = 0          # разминка оценки: ходы сети (например, после подражания) не трогаются
                 self.net.backward(dl, dv)
                 grads = [g for _, _, g in self.net.params()]
                 norm = float(np.sqrt(sum(float((g.astype(np.float64) ** 2).sum()) for g in grads)))
@@ -177,11 +179,11 @@ class Trainer:
                 self.opt.step()
         return info
 
-    def iterate(self):
+    def iterate(self, value_only=False):
         t0 = time.perf_counter()
         batch = self.collect()
         t1 = time.perf_counter()
-        info = self.optimize(batch)
+        info = self.optimize(batch, value_only)
         t2 = time.perf_counter()
         self.update += 1
         self.seconds += t2 - t0

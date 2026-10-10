@@ -1,4 +1,6 @@
 """Сеть и обучение: градиенты потери PPO, сохранение, снимок, пара кругов обучения."""
+import os
+
 import numpy as np
 import pytest
 
@@ -108,3 +110,26 @@ def test_two_rounds_snapshot_and_resume(tmp_path):
     u.iterate()
     for (_, a, _), (_, b, _) in zip(t.net.params(), u.net.params()):
         assert np.allclose(a, b)
+
+
+def test_value_warmup_keeps_policy(tmp_path):
+    t = Trainer(str(tmp_path / "w"), envs=8, steps=16, hidden=(16,), minibatch=64, valid_per=1, echo=False)
+    before = {n: p.copy() for n, p, _ in t.net.params()}
+    t.iterate(value_only=True)
+    after = {n: p for n, p, _ in t.net.params()}
+    assert all(np.array_equal(before[n], after[n]) for n in before if n.startswith("pi."))
+    assert any(not np.array_equal(before[n], after[n]) for n in before if n.startswith("v."))
+
+
+@pytest.mark.slow
+def test_imitation_learns_teacher_and_resumes(tmp_path):
+    from game.train.imitate import Imitator
+    kw = dict(envs=8, steps=16, hidden=(32,), buffer=4096, batch=256, updates_per_iter=8, valid_per=1, echo=False)
+    im = Imitator(str(tmp_path / "i"), **kw)
+    losses = [im.iterate()["loss"] for _ in range(6)]
+    assert losses[-1] < losses[0]
+    im.checkpoint_curve()
+    im.save_snapshot()
+    im2 = Imitator(str(tmp_path / "i"), **kw)
+    assert im2.load_snapshot() and im2.it == 6 and len(im2.curve) == 1
+    assert os.path.exists(tmp_path / "i" / "net.npz")
