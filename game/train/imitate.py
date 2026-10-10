@@ -48,21 +48,22 @@ from game.train.ppo import score, validation_mazes  # noqa: E402
 class Imitator:
     def __init__(self, run_dir, envs=64, steps=64, hidden=(128, 128), lr=1e-3, seed=1, sizes=(5, 20),
                  cap_mult=4, buffer=100_000, batch=1024, updates_per_iter=16, beta_iters=100, valid_per=25,
-                 echo=True):
+                 hints=False, echo=True):
         self.run_dir = run_dir
         os.makedirs(run_dir, exist_ok=True)
         self.log = TrainLog(os.path.join(run_dir, "train.log"), echo=echo)
         self.snapshot_path = os.path.join(run_dir, "snapshot.npz")
         self.cfg = dict(envs=envs, steps=steps, hidden=list(hidden), lr=lr, seed=seed, sizes=list(sizes),
                         cap_mult=cap_mult, buffer=buffer, batch=batch, updates_per_iter=updates_per_iter,
-                        beta_iters=beta_iters)
-        self.net = PolicyNet(hidden, seed=seed)
+                        beta_iters=beta_iters, hints=hints)
+        self.hints = hints
+        self.net = PolicyNet(hidden, seed=seed, nin=F.SIZE_HINT if hints else F.SIZE)
         self.opt = Adam(self.net.params(), lr=lr)
         self.rng = np.random.default_rng(seed)
         self.env = BatchEnv(envs, sizes[1], sizes[1])
         for i in range(envs):
             self._new_maze(i)
-        self.xs = np.zeros((buffer, F.SIZE), np.float16)
+        self.xs = np.zeros((buffer, self.net.nin), np.float16)
         self.legal = np.zeros((buffer, 4), bool)
         self.label = np.zeros(buffer, np.int64)
         self.filled = 0
@@ -95,7 +96,7 @@ class Imitator:
         beta = self.beta()
         agree = 0
         for _ in range(self.cfg["steps"]):
-            x, flips, legal = env.encode()
+            x, flips, legal = env.encode(hints=self.hints)
             real_t = teacher.choose(env.known, env.mem, env.visits, env.pos, env.exit, env.hw)
             label = F.from_real(real_t, flips)
             logits, _ = self.net.forward(x, legal)
@@ -189,9 +190,11 @@ def main(argv=None):
     ap.add_argument("--threads", default="2")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--trial", action="store_true")
+    ap.add_argument("--hints", action="store_true", help="сеть берёт подсказку-прикидку пути (teacher.hint)")
     args = ap.parse_args(argv)
     if args.trial:
-        t = Imitator(tempfile.mkdtemp(prefix="labirinth-imitate-trial-"), echo=False, beta_iters=args.beta_iters)
+        t = Imitator(tempfile.mkdtemp(prefix="labirinth-imitate-trial-"), echo=False, beta_iters=args.beta_iters,
+                     hints=args.hints)
         times = []
         for _ in range(3):
             t0 = time.perf_counter()
@@ -205,7 +208,7 @@ def main(argv=None):
         print(json.dumps({"sec_per_iter": round(per, 2), "eval_s": round(ev, 1), "iters": args.iters,
                           "threads": args.threads, "forecast_minutes": round(total / 60, 1)}, ensure_ascii=False))
         return 0
-    t = Imitator(args.run, beta_iters=args.beta_iters)
+    t = Imitator(args.run, beta_iters=args.beta_iters, hints=args.hints)
     if args.resume and t.load_snapshot():
         t.log(f"продолжаю с круга {t.it}")
     else:

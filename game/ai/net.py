@@ -25,6 +25,8 @@ class PolicyNet:
     def __init__(self, hidden=(128, 128), seed=0, nin=F.SIZE):
         rng = np.random.default_rng(seed)
         self.hidden = tuple(hidden)
+        self.nin = nin
+        self.hints = nin == F.SIZE_HINT          # сеть берёт и подсказку-прикидку пути
         items = []
         n = nin
         for h in self.hidden:
@@ -64,6 +66,7 @@ class PolicyNet:
     def save(self, path, meta=None):
         arrays = nnio.collect(self.parts())
         arrays["__hidden__"] = np.array(self.hidden)
+        arrays["__nin__"] = np.array(self.nin)
         nnio.save(path, arrays)
         if meta is not None:
             with open(os.path.splitext(path)[0] + ".meta.json", "w", encoding="utf-8") as f:
@@ -72,7 +75,8 @@ class PolicyNet:
     @classmethod
     def load(cls, path):
         arrays = nnio.load(path)
-        net = cls(tuple(int(h) for h in arrays["__hidden__"]))
+        nin = int(arrays["__nin__"]) if "__nin__" in arrays else F.SIZE
+        net = cls(tuple(int(h) for h in arrays["__hidden__"]), nin=nin)
         nnio.restore(net.parts(), arrays)
         return net
 

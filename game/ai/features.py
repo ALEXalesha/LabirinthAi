@@ -30,6 +30,8 @@ GLOBAL = 8
 WINDOW = SIDE * SIDE * C
 COARSE = GRID * GRID * CC
 SIZE = WINDOW + COARSE + GLOBAL
+HINT = 13                   # подсказка-прикидка пути (teacher.hint), если сеть её берёт
+SIZE_HINT = SIZE + HINT
 
 # перестановка направлений N E S W при отражениях: по вертикали N<->S, по горизонтали E<->W
 _FLIP_V = np.array([2, 1, 0, 3])
@@ -154,8 +156,12 @@ def from_real(d, flips):
 to_real = from_real
 
 
-def encode_memory(mem):
+def encode_memory(mem, hints=False):
     """Вход сети для одной памяти fog.Memory (пачка из одного)."""
-    return encode(mem.known[None], mem.cells[None], mem.visits[None],
-                  np.array([mem.pos]), np.array([mem.exit]), np.array([[mem.h, mem.w]]),
-                  np.array([mem.last]))
+    args = (mem.known[None], mem.cells[None], mem.visits[None], np.array([mem.pos]), np.array([mem.exit]),
+            np.array([[mem.h, mem.w]]))
+    x, flips, legal = encode(*args, np.array([mem.last]))
+    if hints:
+        from game.ai.teacher import hint
+        x = np.concatenate([x, hint(*args, flips)], axis=1)
+    return x, flips, legal

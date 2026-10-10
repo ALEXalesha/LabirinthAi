@@ -38,3 +38,9 @@ MUTANTS += [
      "        wall = (known & ((mem & bit) == 0)) | (known2 & ((mem2 & opp) == 0))",
      "        wall = known & ((mem & bit) == 0)", TT),
 ]
+MUTANTS += [
+    ("hint: лучший не отмечен", "game/ai/teacher.py", "        out[b, 3 * c + 2] = ok & (dd[:, d] == best)",
+     "        out[b, 3 * c + 2] = ok", TT),
+    ("hint: не развёрнут в окно", "game/ai/teacher.py", "        c = F.from_real(np.full(B, d), flips)",
+     "        c = np.full(B, d)", TT),
+]

@@ -206,7 +206,7 @@ class NetAgent:
 
     def think(self, mem):
         """(вероятности ходов N E S W в настоящих направлениях, оценка)."""
-        x, flips, legal = F.encode_memory(mem)
+        x, flips, legal = F.encode_memory(mem, hints=self.net.hints)
         p, v = self.net.probs(x, legal)
         real = np.zeros(4)
         for d in range(4):

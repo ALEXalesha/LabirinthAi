@@ -72,10 +72,17 @@ class BatchEnv:
                 self.known[b, rr, cc] = True
                 self.mem[b, rr, cc] = self.true[b, rr, cc]
 
-    def encode(self, idx=None):
+    def encode(self, idx=None, hints=False):
+        """Вход сети; hints - с подсказкой-прикидкой пути (teacher.hint), только по памяти."""
         idx = np.arange(self.n) if idx is None else np.asarray(idx)
-        return F.encode(None, None, None, self.pos[idx], self.exit[idx], self.hw[idx], self.last[idx],
-                        padded=self.padded, rows=idx)
+        x, flips, legal = F.encode(None, None, None, self.pos[idx], self.exit[idx], self.hw[idx], self.last[idx],
+                                   padded=self.padded, rows=idx)
+        if hints:
+            from game.ai.teacher import hint
+            h = hint(self.known[idx], self.mem[idx], self.visits[idx], self.pos[idx], self.exit[idx],
+                     self.hw[idx], flips)
+            x = np.concatenate([x, h], axis=1)
+        return x, flips, legal
 
     def distance_to_exit(self, idx=None):
         idx = np.arange(self.n) if idx is None else idx
@@ -144,7 +151,7 @@ def net_chooser(net, greedy=True, rng=None):
     from aikit.nn.losses import softmax
 
     def choose(env, idx):
-        x, flips, legal = env.encode(idx)
+        x, flips, legal = env.encode(idx, hints=net.hints)
         logits, _ = net.forward(x, legal)
         if greedy:
             a = logits.argmax(axis=1)

@@ -14,11 +14,12 @@ from game.core.generators import KINDS, generate
 from game.core.maze import DC, DR, Maze
 
 _NET = PolicyNet(seed=7)
+_HNET = PolicyNet(seed=8, nin=__import__("game.ai.features", fromlist=["x"]).SIZE_HINT)
 
 
 def agents():
     return [RightHand(), Tremaux(3), Optimist(), NetAgent(_NET, "net", greedy=True),
-            NetAgent(_NET, "net_sampled", greedy=False, seed=5)]
+            NetAgent(_NET, "net_sampled", greedy=False, seed=5), NetAgent(_HNET, "net_hint", greedy=True)]
 
 
 def trace(agent, maze, limit):
@@ -54,7 +55,7 @@ def scramble_unseen(maze, seen, rng):
     return out, changed
 
 
-@pytest.mark.parametrize("idx", range(5))
+@pytest.mark.parametrize("idx", range(6))
 @given(kind=st.sampled_from(KINDS), n=st.integers(6, 14), seed=st.integers(0, 10 ** 6),
        cut=st.integers(0, 60))
 @settings(max_examples=60)

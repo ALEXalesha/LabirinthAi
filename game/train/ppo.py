@@ -89,15 +89,16 @@ def score(results, mazes):
 class Trainer:
     def __init__(self, run_dir, envs=64, steps=128, hidden=(128, 128), lr=3e-4, gamma=0.99, lam=0.95,
                  clip=0.2, epochs=4, minibatch=2048, ent=0.01, vf=0.5, seed=1, sizes=(5, 20),
-                 cap_mult=4, valid_per=25, shaping=0.0, new_cell=0.005, echo=True):
+                 cap_mult=4, valid_per=25, shaping=0.0, new_cell=0.005, hints=False, echo=True):
         self.run_dir = run_dir
         os.makedirs(run_dir, exist_ok=True)
         self.log = TrainLog(os.path.join(run_dir, "train.log"), echo=echo)
         self.snapshot_path = os.path.join(run_dir, "snapshot.npz")
         self.cfg = dict(envs=envs, steps=steps, hidden=list(hidden), lr=lr, gamma=gamma, lam=lam, clip=clip,
                         epochs=epochs, minibatch=minibatch, ent=ent, vf=vf, seed=seed, sizes=list(sizes),
-                        cap_mult=cap_mult, shaping=shaping, new_cell=new_cell)
-        self.net = PolicyNet(hidden, seed=seed)
+                        cap_mult=cap_mult, shaping=shaping, new_cell=new_cell, hints=hints)
+        self.hints = hints
+        self.net = PolicyNet(hidden, seed=seed, nin=F.SIZE_HINT if hints else F.SIZE)
         self.opt = Adam(self.net.params(), lr=lr)
         self.rng = np.random.default_rng(seed)
         self.env = BatchEnv(envs, sizes[1], sizes[1], shaping, new_cell)
@@ -118,7 +119,7 @@ class Trainer:
     def collect(self):
         c, env, net = self.cfg, self.env, self.net
         T, B = c["steps"], env.n
-        xs = np.zeros((T, B, F.SIZE), np.float32)
+        xs = np.zeros((T, B, net.nin), np.float32)
         legals = np.zeros((T, B, 4), bool)
         acts = np.zeros((T, B), np.int64)
         logps = np.zeros((T, B))
@@ -126,7 +127,7 @@ class Trainer:
         rewards = np.zeros((T, B))
         ends = np.zeros((T, B))
         for t in range(T):
-            x, flips, legal = env.encode()
+            x, flips, legal = env.encode(hints=self.hints)
             logits, v = net.forward(x, legal)
             p = softmax(logits.astype(np.float64))
             u = self.rng.random(B)[:, None]
@@ -137,7 +138,7 @@ class Trainer:
             r = r.astype(np.float64)
             if trunc.any():
                 ti = np.nonzero(trunc)[0]
-                xt, _, lt = env.encode(ti)
+                xt, _, lt = env.encode(ti, hints=self.hints)
                 _, vt = net.forward(xt, lt)
                 r[ti] += c["gamma"] * vt
             xs[t], legals[t], acts[t] = x, legal, a
@@ -148,7 +149,7 @@ class Trainer:
                 self.recent.append((env.steps[i] / max(env.shortest[i], 1), bool(done[i])))
                 self.episodes += 1
                 self._new_maze(i)
-        x, _, legal = env.encode()
+        x, _, legal = env.encode(hints=self.hints)
         _, last_v = net.forward(x, legal)
         adv, ret = gae(rewards, values, ends, last_v.astype(np.float64), c["gamma"], c["lam"])
         self.transitions += T * B

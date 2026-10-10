@@ -46,6 +46,7 @@ def main(argv=None):
     ap.add_argument("--shaping", type=float, default=0.0, help="добавка за шаг к выходу по прямой")
     ap.add_argument("--new-cell", type=float, default=0.005, help="добавка за шаг в новую клетку")
     ap.add_argument("--sizes", default="5,20")
+    ap.add_argument("--hints", action="store_true", help="сеть берёт подсказку-прикидку пути (teacher.hint)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--eval-every", type=int, default=20)
     ap.add_argument("--early-at", type=int, default=0, help="на каком круге сохранить раннюю сеть "
@@ -63,7 +64,7 @@ def main(argv=None):
     hidden = tuple(int(x) for x in args.hidden.split(","))
     kw = dict(envs=args.envs, steps=args.steps, hidden=hidden, lr=args.lr, ent=args.ent, epochs=args.epochs,
               seed=args.seed, gamma=args.gamma, shaping=args.shaping, new_cell=args.new_cell,
-              sizes=tuple(int(x) for x in args.sizes.split(",")))
+              sizes=tuple(int(x) for x in args.sizes.split(",")), hints=args.hints)
 
     if args.publish:
         os.makedirs(MODEL_DIR, exist_ok=True)

@@ -84,3 +84,32 @@ def choose(known, mem, visits, pos, exit_, hw):
         best_key = np.where(better, key, best_key)
         best = np.where(better, d, best)
     return best
+
+
+def hint(known, mem, visits, pos, exit_, hw, flips):
+    """Подсказка для сети (B, 13) - прикидка пути, как у Оптимиста, но решает сеть.
+    По каждому ходу в развёрнутом окне (как features): можно ли, насколько путь через этого
+    соседа длиннее лучшего (0, 1/2 или 1 - на 2 шага), лучший ли он; и длина лучшего пути.
+    Считается только по памяти."""
+    from game.ai import features as F
+    B = len(pos)
+    H, W = known.shape[1:]
+    dist = distances(known, mem, hw, exit_, pos)
+    b = np.arange(B)
+    here = mem[b, pos[:, 0], pos[:, 1]]
+    dd = np.full((B, 4), np.inf)
+    for d, (dr, dc, bit) in enumerate(((-1, 0, 1), (0, 1, 2), (1, 0, 4), (0, -1, 8))):
+        r2 = np.clip(pos[:, 0] + dr, 0, H - 1)
+        c2 = np.clip(pos[:, 1] + dc, 0, W - 1)
+        dd[:, d] = np.where((here & bit) > 0, np.minimum(dist[b, r2, c2], 10 ** 6), np.inf)
+    best = dd.min(axis=1)
+    out = np.zeros((B, F.HINT), np.float32)
+    for d in range(4):
+        c = F.from_real(np.full(B, d), flips)
+        ok = np.isfinite(dd[:, d])
+        rel = np.where(ok, np.minimum((dd[:, d] - best) / 2.0, 1.0), 1.0)
+        out[b, 3 * c] = ok
+        out[b, 3 * c + 1] = rel
+        out[b, 3 * c + 2] = ok & (dd[:, d] == best)
+    out[:, 12] = np.minimum(best / 32.0, 3.0)
+    return out

@@ -1,6 +1,7 @@
 """Пачка лабиринтов (обучение) и одиночный проход (игра) видят одно и то же; окно сети
 разворачивается правильно."""
 import numpy as np
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -77,8 +78,9 @@ def test_direction_maps_are_involutions():
             assert np.array_equal(F.to_real(F.from_real(d, flips), flips), d)
 
 
-def test_single_net_agent_matches_batch_runner():
-    net = PolicyNet(seed=3)
+@pytest.mark.parametrize("hints", [False, True])
+def test_single_net_agent_matches_batch_runner(hints):
+    net = PolicyNet(seed=3, nin=F.SIZE_HINT if hints else F.SIZE)
     mazes = [generate(k, 8, 9, s) for s, k in enumerate(["dfs", "prim", "kruskal", "wilson"] * 3)]
     batch = run_policy(net_chooser(net, greedy=True), mazes, cap_mult=3)
     for m, (steps, ok) in zip(mazes, batch):
