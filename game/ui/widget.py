@@ -29,7 +29,7 @@ from game.version import VERSION
 
 LEVELS = ("novice", "medium", "strong")
 WATCH_AGENTS = HONEST + CHEATERS
-WATCH_DEFAULT = ("right_hand", "tremaux", "net_early", "net_strong")
+WATCH_DEFAULT = ("right_hand", "net_early", "net_ppo", "net_strong")
 SCHEMA = {
     "size": ("m", st.choice(*SIZES)),
     "kind": ("random", st.choice("random", *KINDS)),
@@ -444,14 +444,16 @@ class TrainingPage(ScrollPage):
         self.passport_caption.setText(t("passport"))
         training = load_json(os.path.join(MODEL_DIR, "training.json"))
         passport = load_passport()
-        if training and training.get("curve"):
+        if training and training.get("ppo"):
             key = training.get("curve_key", "ratio")
-            pts = [(c["episodes"], c[key]) for c in training["curve"]]
+            series = [(t("agent_" + name), [(c["episodes"], c[key]) for c in training[part]["curve"]], col)
+                      for name, part, col in (("net_ppo", "ppo", "warn"), ("net_strong", "strong", "good"))
+                      if training.get(part)]
             refs = [(t("agent_" + k), v, col) for k, v, col in
                     ((k, training.get("baselines", {}).get(k), col) for k, col in
                      (("right_hand", "muted"), ("tremaux", "accent2"), ("optimist", "select")))
                     if v is not None]
-            self.chart.set_data(pts, refs, t("curve_x"), t("curve_net"), self.gw.ctx.theme)
+            self.chart.set_data(series, refs, t("curve_x"), self.gw.ctx.theme)
             self.chart.setVisible(True)
         else:
             self.chart.setVisible(False)

@@ -19,7 +19,7 @@ from game.ai import features as F
 from game.core.maze import DC, DR, OPPOSITE
 
 STRONG_TEMPERATURE = 1.0       # подбирается по кривой после обучения
-HONEST = ("right_hand", "tremaux", "optimist", "net_random", "net_early", "net_strong")
+HONEST = ("right_hand", "tremaux", "optimist", "net_random", "net_early", "net_ppo", "net_strong")
 CHEATERS = ("bfs", "astar")
 
 
@@ -225,7 +225,7 @@ class NetAgent:
 
 def make_agent(name, seed=0):
     """Агент по имени. Сети берутся из game/models; нет модели - None."""
-    from game.ai.net import EARLY, STRONG, PolicyNet, load_model
+    from game.ai.net import EARLY, PPO, STRONG, PolicyNet, load_model
     if name == "right_hand":
         return RightHand()
     if name == "tremaux":
@@ -239,6 +239,9 @@ def make_agent(name, seed=0):
     if name == "net_early":
         net = load_model(EARLY)
         return NetAgent(net, name, greedy=False, seed=seed) if net is not None else None
+    if name == "net_ppo":
+        net = load_model(PPO)
+        return NetAgent(net, name, greedy=False, seed=seed) if net is not None else None
     if name == "net_strong":
         net = load_model(STRONG)
         return NetAgent(net, name, seed=seed, temperature=STRONG_TEMPERATURE) if net is not None else None
@@ -246,12 +249,13 @@ def make_agent(name, seed=0):
 
 
 def level_agent(level, seed=0):
-    """Уровни: новичок - правая рука, средний - ранняя сеть, сильный - обученная.
-    Пока сети нет, средний - Тремо, сильный - Оптимист (видно в окне)."""
+    """Уровни: новичок - правая рука; средний - сеть, которая училась сама с нуля (PPO);
+    сильный - сеть с подсказкой-прикидкой пути (подражание Оптимисту и PPO). Пока сетей
+    нет, средний - Тремо, сильный - Оптимист (видно в окне)."""
     if level == "novice":
         return RightHand()
     if level == "medium":
-        return make_agent("net_early", seed) or Tremaux(seed)
+        return make_agent("net_ppo", seed) or Tremaux(seed)
     if level == "strong":
         return make_agent("net_strong", seed) or Optimist()
     raise ValueError(level)

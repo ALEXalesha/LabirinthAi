@@ -16,7 +16,8 @@ from game.ai import features as F
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
 STRONG = "labirinth-policy.npz"
-EARLY = "labirinth-policy-early.npz"
+EARLY = "labirinth-policy-early.npz"         # чистый PPO в начале обучения («Смотреть»)
+PPO = "labirinth-policy-ppo.npz"             # чистый PPO, обучен до конца (средний уровень)
 PASSPORT = "labirinth-policy.json"
 NEG = -1e9
 

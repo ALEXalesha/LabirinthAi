@@ -11,7 +11,7 @@ from aikit import theme
 from game.core.maze import BIT, DC, DR
 
 AGENT_COLORS = {"you": "accent", "ai": "warn", "right_hand": "muted", "tremaux": "accent2",
-                "optimist": "select", "net_random": "bad", "net_early": "warn", "net_strong": "good",
+                "optimist": "select", "net_random": "bad", "net_early": "warn", "net_ppo": "accent2", "net_strong": "good",
                 "bfs": "capture_hint", "astar": "capture_hint"}
 
 

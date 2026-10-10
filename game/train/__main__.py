@@ -56,10 +56,13 @@ def main(argv=None):
     ap.add_argument("--init", help="начать с весов сети (например, после подражания: runs/labirinth-imitate/net.npz)")
     ap.add_argument("--value-warmup", type=int, default=0, help="сколько первых кругов учить только оценку")
     ap.add_argument("--trial", action="store_true", help="3 круга и прогноз времени")
-    ap.add_argument("--publish", action="store_true")
+    ap.add_argument("--publish", action="store_true", help="сильная сеть из --run, средняя и ранняя - из --ppo-run")
+    ap.add_argument("--imitate-run", default=os.path.join("runs", "labirinth-imitate"))
+    ap.add_argument("--ppo-run", default=os.path.join("runs", "labirinth-v2-ppo"),
+                    help="прогон чистого PPO: его сеть - средний уровень, early.npz - «начало обучения»")
     args = ap.parse_args(argv)
 
-    from game.ai.net import EARLY, MODEL_DIR, STRONG, PolicyNet
+    from game.ai.net import PolicyNet
     from game.train.ppo import Trainer
     hidden = tuple(int(x) for x in args.hidden.split(","))
     kw = dict(envs=args.envs, steps=args.steps, hidden=hidden, lr=args.lr, ent=args.ent, epochs=args.epochs,
@@ -67,22 +70,7 @@ def main(argv=None):
               sizes=tuple(int(x) for x in args.sizes.split(",")), hints=args.hints)
 
     if args.publish:
-        os.makedirs(MODEL_DIR, exist_ok=True)
-        t = Trainer(args.run, echo=False, **kw)
-        if not t.load_snapshot():
-            print("нет снимка в", args.run)
-            return 1
-        t.net.save(os.path.join(MODEL_DIR, STRONG))
-        early = os.path.join(args.run, "early.npz")
-        if os.path.exists(early):
-            shutil.copyfile(early, os.path.join(MODEL_DIR, EARLY))
-        with open(os.path.join(MODEL_DIR, "training.json"), "w", encoding="utf-8", newline="\n") as f:
-            json.dump({"cfg": t.cfg, "updates": t.update, "transitions": t.transitions,
-                       "episodes": t.episodes, "seconds": round(t.seconds, 1), "threads": args.threads,
-                       "early_at": _early_at(args), "curve_key": "ratio_sampled",
-                       "baselines": baselines(t.valid), "curve": t.curve}, f, ensure_ascii=False, indent=1)
-        print(f"сеть круга {t.update} -> game/models")
-        return 0
+        return publish(args, kw)
 
     if args.trial:
         run = tempfile.mkdtemp(prefix="labirinth-trial-")
@@ -129,6 +117,43 @@ def main(argv=None):
             t.save_snapshot()
     t.save_snapshot()
     t.log(f"готово: {t.update} кругов, {t.transitions} шагов, {t.episodes} лабиринтов, {t.seconds / 60:.1f} мин")
+    return 0
+
+
+def publish(args, kw):
+    """Сети в game/models: сильная - из --run (подражание + PPO, с подсказкой), средняя и
+    «начало обучения» - из --ppo-run (чистый PPO с нуля). training.json - кривые для окна."""
+    import re
+    from aikit.trainlog import load_snapshot
+    from game.ai.net import EARLY, MODEL_DIR, PPO, STRONG
+    from game.train.ppo import Trainer
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    strong = Trainer(args.run, echo=False, **kw)
+    ppo = Trainer(args.ppo_run, echo=False, **{**kw, "hints": False})
+    if not strong.load_snapshot() or not ppo.load_snapshot():
+        print("нет снимка в", args.run, "или", args.ppo_run)
+        return 1
+    strong.net.save(os.path.join(MODEL_DIR, STRONG))
+    ppo.net.save(os.path.join(MODEL_DIR, PPO))
+    shutil.copyfile(os.path.join(args.ppo_run, "early.npz"), os.path.join(MODEL_DIR, EARLY))
+    log = open(os.path.join(args.ppo_run, "train.log"), encoding="utf-8").read()
+    m = re.search(r"ранняя сеть сохранена \(круг (\d+)\)", log)
+
+    def info(t):
+        return {"cfg": t.cfg, "updates": t.update, "transitions": t.transitions, "episodes": t.episodes,
+                "seconds": round(t.seconds, 1), "curve": t.curve}
+
+    imitation = None
+    got = load_snapshot(os.path.join(args.imitate_run, "snapshot.npz"))
+    if got is not None:
+        meta = got[1]
+        imitation = {k: meta[k] for k in ("cfg", "it", "transitions", "episodes", "seconds", "curve")}
+    data = {"threads": args.threads, "curve_key": "ratio_sampled", "baselines": baselines(ppo.valid),
+            "ppo": {**info(ppo), "early_at": int(m.group(1)) if m else None},
+            "strong": {**info(strong), "init": args.init, "imitation": imitation}}
+    with open(os.path.join(MODEL_DIR, "training.json"), "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+    print(f"сильная (круг {strong.update}), средняя (круг {ppo.update}), ранняя -> game/models")
     return 0
 
 

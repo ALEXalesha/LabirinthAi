@@ -25,7 +25,7 @@ import time  # noqa: E402
 
 SAMPLE = 10
 SEED = 4_000_000_000
-AGENTS = ("right_hand", "tremaux", "optimist", "net_early", "net_strong")
+AGENTS = ("right_hand", "tremaux", "optimist", "net_ppo", "net_strong")
 TRAIN = ("dfs", "prim", "kruskal", "wilson")
 # (размер, генераторы: 'train' - те, что видела сеть, или один незнакомый)
 CHECKS = [(8, "train"), (12, "train"), (16, "train"), (24, "train"), (16, "binary"), (16, "rooms")]
