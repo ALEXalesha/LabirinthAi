@@ -27,3 +27,14 @@ MUTANTS = [
     ("features: обзор - пройденное как виденное", FE, "    stack[..., 2] = vp[b, R, Cc] > 0", "    stack[..., 2] = kp[b, R, Cc]", TE),
     ("features: обзор без выхода", FE, "    out[..., 3] = blocks[..., 3].max(axis=(2, 4))", "    out[..., 3] = 0", TE),
 ]
+TT = "tests/test_teacher.py"
+MUTANTS += [
+    ("teacher: волна стоит по соседям за стеной", "game/ai/teacher.py",
+     "                m = np.where((here & bit) > 0, np.minimum(m, dist[b, r2, c2]), m)",
+     "                m = np.minimum(m, dist[b, r2, c2])", TT),
+    ("teacher: при равных не смотрит на посещения", "game/ai/teacher.py",
+     "        key = dd * 1e7 + np.minimum(visits[b, r2, c2], 1e6) * 10 + d", "        key = dd * 1e7 + d", TT),
+    ("teacher: стена видна только со своей стороны", "game/ai/teacher.py",
+     "        wall = (known & ((mem & bit) == 0)) | (known2 & ((mem2 & opp) == 0))",
+     "        wall = known & ((mem & bit) == 0)", TT),
+]
