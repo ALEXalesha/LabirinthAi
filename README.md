@@ -2,6 +2,9 @@
 
 **Mazes in the fog and an AI that learns to solve mazes it has never seen.** Work in progress (0.1.0).
 
+[![Built with Claude Code](https://img.shields.io/badge/Built_with-Claude_Code-D97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
+Code, tests and docs are written by Claude (Anthropic) in Claude Code. Ideas, testing and decisions - Alexey.
+
 [Русская версия](README.ru.md) · MIT License
 
 - Six seeded generators: depth-first, Prim, Kruskal, Wilson, binary tree, rooms (recursive division); optional loops. Law tests: every maze is connected, perfect mazes have exactly cells − 1 passages.
